@@ -1,6 +1,6 @@
 <div align="center">
 
-![Unilever Bangladesh Retail Analysis](https://inkbotdesign.com/wp-content/uploads/2023/08/Unilever-Logo-PNG-File-881x1024.webp)
+<img src="https://inkbotdesign.com/wp-content/uploads/2023/08/Unilever-Logo-PNG-File-881x1024.webp" alt="Unilever Bangladesh Retail Analysis" width="500">
 
 # Unilever Bangladesh 
 ## Retail Analysis (Demo)
