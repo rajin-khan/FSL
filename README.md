@@ -15,6 +15,9 @@ This is a YOLO-based object detection pipeline designed to classify and differen
 - Provide a reusable framework for **training and inference** on custom datasets.
 
 ## 📁 Repository Structure
+
+</div>
+
 ```
 UBLRetailAnalysis/
 │── Main/
@@ -29,6 +32,7 @@ UBLRetailAnalysis/
 │── notebooks/                # Jupyter Notebooks for analysis
 │── README.md                 # Main documentation
 ```
+<div align="center">
 
 ---
 
