@@ -73,12 +73,13 @@ class YOLOv8DetectionPipeline:
         Returns:
             list: List of detections, each as [class_id, confidence, x, y, width, height]
             dict: Count of objects per class
+            float: Average confidence of detections
         """
         # Read the image
         img = cv2.imread(image_path)
         if img is None:
             print(f"Error: Could not read image {image_path}")
-            return [], {}
+            return [], {}, 0.0
         
         # Perform detection
         results = self.model(img, conf=self.conf_thresh, iou=self.iou_thresh, imgsz=self.img_size)
@@ -86,6 +87,7 @@ class YOLOv8DetectionPipeline:
         # Process results
         detections = []
         class_counts = Counter()
+        total_confidence = 0.0
         
         # Create a copy of the image for visualization
         img_vis = img.copy() if visualize else None
@@ -109,6 +111,9 @@ class YOLOv8DetectionPipeline:
                 # Update class count
                 class_counts[class_name] += 1
                 
+                # Add to total confidence
+                total_confidence += conf
+                
                 # Convert to [class_name, confidence, x, y, width, height] format
                 width = x2 - x1
                 height = y2 - y1
@@ -128,20 +133,76 @@ class YOLOv8DetectionPipeline:
                     cv2.rectangle(img_vis, (x1, y1 - text_size[1] - 10), (x1 + text_size[0], y1), color, -1)
                     cv2.putText(img_vis, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
         
-        # Add class counts to the image
-        if visualize and img_vis is not None and class_counts:
+        # Calculate average confidence
+        avg_confidence = total_confidence / len(detections) if detections else 0.0
+        
+        # Add class counts and average confidence to the image
+        if visualize and img_vis is not None:
             y_offset = 30
-            for i, (class_name, count) in enumerate(class_counts.items()):
-                text = f"{class_name}: {count}"
-                cv2.putText(img_vis, text, (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                y_offset += 30
+            # Add detection quality info
+            quality_text = f"Detection Quality: {self.get_accuracy_label(avg_confidence)}"
+            quality_percentage = f"Est. Accuracy: {self.get_accuracy_percentage(avg_confidence):.1f}%"
+            cv2.putText(img_vis, quality_text, (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            y_offset += 30
+            cv2.putText(img_vis, quality_percentage, (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            y_offset += 30
+            
+            # Add class counts
+            if class_counts:
+                for class_name, count in class_counts.items():
+                    text = f"{class_name}: {count}"
+                    cv2.putText(img_vis, text, (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                    y_offset += 30
         
         # Save the output image if output_path is provided
         if output_path and visualize:
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             cv2.imwrite(output_path, img_vis)
         
-        return detections, dict(class_counts)
+        return detections, dict(class_counts), avg_confidence
+    
+    def get_accuracy_percentage(self, avg_confidence):
+        """
+        Convert average confidence to an accuracy percentage.
+        
+        Args:
+            avg_confidence (float): Average confidence of detections
+            
+        Returns:
+            float: Estimated accuracy percentage
+        """
+        # Scale confidence to a more intuitive range (typically confidence >0.8 is very good)
+        if avg_confidence > 0.8:
+            # Scale 0.8-1.0 to 90-100%
+            return 90 + (avg_confidence - 0.8) * 50
+        elif avg_confidence > 0.6:
+            # Scale 0.6-0.8 to 80-90%
+            return 80 + (avg_confidence - 0.6) * 50
+        elif avg_confidence > 0.4:
+            # Scale 0.4-0.6 to 70-80%
+            return 70 + (avg_confidence - 0.4) * 50
+        else:
+            # Scale 0.25-0.4 to 50-70%
+            return max(50, 50 + (avg_confidence - 0.25) * 133)
+    
+    def get_accuracy_label(self, avg_confidence):
+        """
+        Convert average confidence to a human-readable label.
+        
+        Args:
+            avg_confidence (float): Average confidence of detections
+            
+        Returns:
+            str: Human-readable label for the quality of detections
+        """
+        if avg_confidence > 0.8:
+            return "Excellent"
+        elif avg_confidence > 0.6:
+            return "Good"
+        elif avg_confidence > 0.4:
+            return "Moderate"
+        else:
+            return "Low"
     
     def process_directory(self, input_dir, output_dir=None, visualize=True, save_results=True):
         """
@@ -156,6 +217,7 @@ class YOLOv8DetectionPipeline:
         Returns:
             dict: Dictionary mapping image paths to lists of detections
             dict: Dictionary mapping image paths to class counts
+            dict: Dictionary mapping image paths to average confidence scores
         """
         # Create output directory if not exists
         if output_dir:
@@ -171,6 +233,7 @@ class YOLOv8DetectionPipeline:
         # Process each image
         results = {}
         all_class_counts = {}
+        all_confidences = {}
         total_counts = Counter()
         
         for img_path in tqdm(image_files, desc="Processing images"):
@@ -183,7 +246,7 @@ class YOLOv8DetectionPipeline:
                 out_img_path = None
             
             # Process the image
-            detections, class_counts = self.process_image(
+            detections, class_counts, avg_confidence = self.process_image(
                 str(img_path),
                 str(out_img_path) if out_img_path else None,
                 visualize
@@ -192,6 +255,7 @@ class YOLOv8DetectionPipeline:
             # Store results
             results[str(img_path)] = detections
             all_class_counts[str(img_path)] = class_counts
+            all_confidences[str(img_path)] = avg_confidence
             
             # Update total counts
             total_counts.update(class_counts)
@@ -203,37 +267,145 @@ class YOLOv8DetectionPipeline:
                     f.write(f"Objects detected in {img_path.name}:\n")
                     for class_name, count in class_counts.items():
                         f.write(f"{class_name}: {count}\n")
+                    f.write(f"\nEstimated Detection Accuracy: {self.get_accuracy_percentage(avg_confidence):.1f}%\n")
+                    f.write(f"Quality: {self.get_accuracy_label(avg_confidence)}\n")
                     f.write("\nDetailed detections:\n")
                     for det in detections:
                         # Format: class_name confidence x y width height
                         f.write(f"{det[0]} {det[1]:.6f} {det[2]} {det[3]} {det[4]} {det[5]}\n")
         
-        # Create a summary of all class counts
+        # Calculate overall average confidence
+        overall_avg_confidence = sum(all_confidences.values()) / len(all_confidences) if all_confidences else 0.0
+        
+        # Create a summary of all class counts and accuracy
         if output_dir and save_results:
-            with open(os.path.join(output_dir, "class_counts_summary.txt"), 'w') as f:
-                f.write("===== TOTAL OBJECT COUNTS ACROSS ALL IMAGES =====\n")
+            with open(os.path.join(output_dir, "detection_summary.txt"), 'w') as f:
+                f.write("===== DETECTION SUMMARY =====\n\n")
+                f.write(f"Overall Estimated Accuracy: {self.get_accuracy_percentage(overall_avg_confidence):.1f}%\n")
+                f.write(f"Detection Quality: {self.get_accuracy_label(overall_avg_confidence)}\n")
+                f.write("\n===== TOTAL OBJECT COUNTS ACROSS ALL IMAGES =====\n")
                 for class_name, count in total_counts.items():
                     f.write(f"{class_name}: {count}\n")
-                f.write("\n===== OBJECT COUNTS PER IMAGE =====\n\n")
-                for img_path, counts in all_class_counts.items():
+                f.write("\n===== OBJECT COUNTS AND ACCURACY PER IMAGE =====\n\n")
+                for img_path in sorted(all_class_counts.keys()):
                     f.write(f"Image: {img_path}\n")
-                    for class_name, count in counts.items():
+                    f.write(f"Estimated Accuracy: {self.get_accuracy_percentage(all_confidences[img_path]):.1f}%\n")
+                    f.write(f"Quality: {self.get_accuracy_label(all_confidences[img_path])}\n")
+                    f.write("Objects:\n")
+                    for class_name, count in all_class_counts[img_path].items():
                         f.write(f"  {class_name}: {count}\n")
                     f.write("\n")
         
-        return results, all_class_counts
+        return results, all_class_counts, all_confidences
     
-    def export_results(self, results, output_path):
+    def process_multiple_images(self, image_paths, output_dir=None, visualize=True, save_results=True):
+        """
+        Process multiple images.
+        
+        Args:
+            image_paths (list): List of paths to input images
+            output_dir (str, optional): Path to save output images
+            visualize (bool): Whether to visualize detections
+            save_results (bool): Whether to save detection results to a text file
+            
+        Returns:
+            dict: Dictionary mapping image paths to lists of detections
+            dict: Dictionary mapping image paths to class counts
+            dict: Dictionary mapping image paths to average confidence scores
+        """
+        # Create output directory if not exists
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
+        
+        # Process each image
+        results = {}
+        all_class_counts = {}
+        all_confidences = {}
+        total_counts = Counter()
+        
+        for img_path in tqdm(image_paths, desc="Processing images"):
+            img_path = Path(img_path)
+            # Determine output path
+            if output_dir:
+                out_img_path = Path(output_dir) / img_path.name
+            else:
+                out_img_path = None
+            
+            # Process the image
+            detections, class_counts, avg_confidence = self.process_image(
+                str(img_path),
+                str(out_img_path) if out_img_path else None,
+                visualize
+            )
+            
+            # Store results
+            results[str(img_path)] = detections
+            all_class_counts[str(img_path)] = class_counts
+            all_confidences[str(img_path)] = avg_confidence
+            
+            # Update total counts
+            total_counts.update(class_counts)
+            
+            # Save results to a text file if requested
+            if save_results and output_dir:
+                txt_path = out_img_path.with_suffix('.txt')
+                with open(txt_path, 'w') as f:
+                    f.write(f"Objects detected in {img_path.name}:\n")
+                    for class_name, count in class_counts.items():
+                        f.write(f"{class_name}: {count}\n")
+                    f.write(f"\nEstimated Detection Accuracy: {self.get_accuracy_percentage(avg_confidence):.1f}%\n")
+                    f.write(f"Quality: {self.get_accuracy_label(avg_confidence)}\n")
+                    f.write("\nDetailed detections:\n")
+                    for det in detections:
+                        # Format: class_name confidence x y width height
+                        f.write(f"{det[0]} {det[1]:.6f} {det[2]} {det[3]} {det[4]} {det[5]}\n")
+        
+        # Calculate overall average confidence
+        overall_avg_confidence = sum(all_confidences.values()) / len(all_confidences) if all_confidences else 0.0
+        
+        # Create a summary of all class counts and accuracy
+        if output_dir and save_results:
+            with open(os.path.join(output_dir, "detection_summary.txt"), 'w') as f:
+                f.write("===== DETECTION SUMMARY =====\n\n")
+                f.write(f"Overall Estimated Accuracy: {self.get_accuracy_percentage(overall_avg_confidence):.1f}%\n")
+                f.write(f"Detection Quality: {self.get_accuracy_label(overall_avg_confidence)}\n")
+                f.write("\n===== TOTAL OBJECT COUNTS ACROSS ALL IMAGES =====\n")
+                for class_name, count in total_counts.items():
+                    f.write(f"{class_name}: {count}\n")
+                f.write("\n===== OBJECT COUNTS AND ACCURACY PER IMAGE =====\n\n")
+                for img_path in sorted(all_class_counts.keys()):
+                    f.write(f"Image: {img_path}\n")
+                    f.write(f"Estimated Accuracy: {self.get_accuracy_percentage(all_confidences[img_path]):.1f}%\n")
+                    f.write(f"Quality: {self.get_accuracy_label(all_confidences[img_path])}\n")
+                    f.write("Objects:\n")
+                    for class_name, count in all_class_counts[img_path].items():
+                        f.write(f"  {class_name}: {count}\n")
+                    f.write("\n")
+        
+        return results, all_class_counts, all_confidences
+    
+    def export_results(self, results, all_confidences, output_path):
         """
         Export detection results to a text file.
         
         Args:
             results (dict): Dictionary mapping image paths to lists of detections
+            all_confidences (dict): Dictionary mapping image paths to average confidence scores
             output_path (str): Path to save the results
         """
         with open(output_path, 'w') as f:
+            # Calculate overall average confidence
+            overall_avg_confidence = sum(all_confidences.values()) / len(all_confidences) if all_confidences else 0.0
+            
+            f.write("===== DETECTION SUMMARY =====\n\n")
+            f.write(f"Overall Estimated Accuracy: {self.get_accuracy_percentage(overall_avg_confidence):.1f}%\n")
+            f.write(f"Detection Quality: {self.get_accuracy_label(overall_avg_confidence)}\n\n")
+            
             for img_path, detections in results.items():
                 f.write(f"Image: {img_path}\n")
+                avg_confidence = all_confidences.get(img_path, 0.0)
+                f.write(f"Estimated Accuracy: {self.get_accuracy_percentage(avg_confidence):.1f}%\n")
+                f.write(f"Quality: {self.get_accuracy_label(avg_confidence)}\n")
                 
                 # Count objects per class in this image
                 class_counts = Counter([det[0] for det in detections])
@@ -248,10 +420,16 @@ class YOLOv8DetectionPipeline:
                 f.write("\n")
 
 
+def is_image_file(path):
+    """Check if a file is an image based on its extension."""
+    image_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.webp']
+    return Path(path).suffix.lower() in image_extensions
+
+
 def main():
     parser = argparse.ArgumentParser(description="YOLOv8 Detection Pipeline")
     parser.add_argument("--model", required=True, help="Path to the YOLOv8 model weights (.pt file)")
-    parser.add_argument("--input", required=True, help="Path to input directory containing images")
+    parser.add_argument("--input", required=True, nargs='+', help="Path to input directory or image file(s)")
     parser.add_argument("--output", default="output", help="Path to output directory")
     parser.add_argument("--conf", type=float, default=0.25, help="Confidence threshold")
     parser.add_argument("--iou", type=float, default=0.45, help="IoU threshold")
@@ -269,27 +447,80 @@ def main():
         img_size=args.img_size
     )
     
-    # Process the directory
+    # Process the input(s)
     start_time = time.time()
-    results, class_counts = pipeline.process_directory(
-        input_dir=args.input,
-        output_dir=args.output,
-        visualize=not args.no_visualize,
-        save_results=not args.no_save_results
-    )
+    
+    # Initialize results and class_counts
+    results = {}
+    class_counts = {}
+    all_confidences = {}
+    
+    # Check if inputs are directories, single image, or multiple images
+    input_paths = args.input
+    image_paths = []
+    dir_paths = []
+    
+    # Categorize inputs into directories and images
+    for input_path in input_paths:
+        path = Path(input_path)
+        if path.is_dir():
+            dir_paths.append(path)
+        elif is_image_file(path):
+            image_paths.append(path)
+        else:
+            print(f"Warning: {input_path} is not a valid directory or image file. Skipping.")
+    
+    # Process directories
+    for dir_path in dir_paths:
+        print(f"Processing directory: {dir_path}")
+        dir_results, dir_class_counts, dir_confidences = pipeline.process_directory(
+            input_dir=str(dir_path),
+            output_dir=args.output,
+            visualize=not args.no_visualize,
+            save_results=not args.no_save_results
+        )
+        results.update(dir_results)
+        class_counts.update(dir_class_counts)
+        all_confidences.update(dir_confidences)
+    
+    # Process individual images
+    if image_paths:
+        print(f"Processing {len(image_paths)} individual image(s)")
+        img_results, img_class_counts, img_confidences = pipeline.process_multiple_images(
+            image_paths=image_paths,
+            output_dir=args.output,
+            visualize=not args.no_visualize,
+            save_results=not args.no_save_results
+        )
+        results.update(img_results)
+        class_counts.update(img_class_counts)
+        all_confidences.update(img_confidences)
+    
     elapsed_time = time.time() - start_time
     
     # Export combined results
-    pipeline.export_results(results, os.path.join(args.output, "detections_summary.txt"))
+    if results and not args.no_save_results:
+        pipeline.export_results(results, all_confidences, os.path.join(args.output, "detections_summary.txt"))
+    
+    # Calculate overall average confidence
+    overall_avg_confidence = sum(all_confidences.values()) / len(all_confidences) if all_confidences else 0.0
     
     # Print summary
     print(f"Processed {len(results)} images in {elapsed_time:.2f} seconds")
-    print(f"Total objects detected by class:")
+    print(f"Overall Estimated Accuracy: {pipeline.get_accuracy_percentage(overall_avg_confidence):.1f}%")
+    print(f"Detection Quality: {pipeline.get_accuracy_label(overall_avg_confidence)}")
+    
+    # Calculate and print total objects detected
     total_counts = Counter()
     for counts in class_counts.values():
         total_counts.update(counts)
-    for class_name, count in total_counts.items():
-        print(f"  {class_name}: {count}")
+    
+    if total_counts:
+        print(f"Total objects detected by class:")
+        for class_name, count in total_counts.items():
+            print(f"  {class_name}: {count}")
+    else:
+        print("No objects detected.")
     
     print(f"Output saved to {args.output}")
 

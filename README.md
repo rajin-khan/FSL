@@ -3,10 +3,10 @@
 <img src="https://inkbotdesign.com/wp-content/uploads/2023/08/Unilever-Logo-PNG-File-881x1024.webp" alt="Unilever Bangladesh Retail Analysis" width="500">
 
 # Unilever Bangladesh 
-## Retail Analysis (Demo)
+## Retail Analysis Project
 
 ## 📌 Overview
-This is a YOLO-based object detection pipeline designed to classify and differentiate **UBL vs. Non-UBL** products, specifically focusing on sachets and shelf products. The system supports **multiple models (YOLOv8, Transformer-based approaches, etc.)** and provides a structured dataset for training, testing, and validation.
+This is a YOLO-based object detection pipeline for Unilever Bangladesh, designed to classify and differentiate **UBL vs. Non-UBL** products, specifically focusing on sachets and shelf products. The system supports **multiple models (YOLOv8, Transformer-based approaches, etc.)** and provides a structured dataset for training, testing, and validation.
 
 ## 🔍 Project Objectives
 - Detect and classify **UBL vs. Non-UBL** products in retail environments.
