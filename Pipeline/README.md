@@ -119,19 +119,7 @@ The pipeline provides two metrics to evaluate detection quality:
 
 2. **Detection Quality**: A human-readable label (Excellent, Good, Moderate, or Low)
 
-## Dataset Information
-
-### Dataset Structure
-Two folders have been provided:
-
-###### **/annotated**: The original folder, with all the images together, and classes.txt and other files in /labels.
-###### **/dataset**: The files after train/test/val split was done.
-
-### Labeling Process
-The dataset was annotated using LabelImg, with specific focus on:
-- Clear Men's Shampoo 5ml *(ClearMen5ml)*
-- Horlicks Standard 18ml *(HorlicksCTSL18ml)*
-- Dove Conditioner 7ml *(DoveConditionerIRPDOLCE7ml)*
+## Dataset Information (TBD)
 
 ## Training Process
 
